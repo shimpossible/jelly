@@ -36,7 +36,7 @@ public:
 	}
 };
 
-template<typename T, class LOCK_T>
+template<class LOCK_T,typename T>
 class JellyServiceLockableDispatchCommand : public JellyDispatchCommand
 {
 	LOCK_T& m_Lock;
@@ -82,7 +82,67 @@ protected:
 	JellyMessageQueue* m_pQueue;
 };
 
-typedef void (*DispatchCallback)(JellyLink& link, JellyMessage* pMessage);
+class JellyProtocol
+{
+	struct Tuple
+	{
+	   JellyDispatchCommand*  command;  // handler to dispatch the message
+	   JellyMessageQueue*     queue;    // queue messages here if we can't dispatch
+	};
+	std::list<Tuple>          m_Handlers;
+public:
+	const char*               name;      // ASCII name of protocol
+	JELLY_U32                 crc;	     // CRC of protocol
+
+	JellyProtocol(const char* name, JELLY_U32 crc)
+	{
+		this->name = name;
+		this->crc  = crc;
+	}
+	void AddHandler(JellyDispatchCommand* command)
+	{
+		Tuple t;
+		t.command = command;
+		t.queue   = 0;
+		m_Handlers.push_back(t);
+	}
+
+	/**
+	Add a message queue for the given handler
+	 */
+	void AddQueue(JellyMessageQueue* queue, void* handler)
+	{
+		for(std::list<Tuple>::iterator it = m_Handlers.begin();
+			it != m_Handlers.end();
+			it++)
+		{
+			if(it->command->TargetObject() == handler)
+			{
+				it->queue = queue;
+				break;
+			}
+		}
+	}
+
+	/**
+	 Dispatch the incomming message
+	 */
+	void operator()(JellyLink& link, JellyMessage* msg)
+	{
+		for(std::list<Tuple>::iterator it = m_Handlers.begin();
+			it != m_Handlers.end();
+			it++)
+		{
+			if(it->queue!=0)
+			{
+				it->queue->Add(link, msg);
+			}else
+			{
+				it->command->Dispatch(link,msg);
+			}
+		}
+	}
+};
 
 class JellyRouteConfig
 {
@@ -103,32 +163,25 @@ public:
 	template<typename PROTOCOL_T, typename HANDLER_T>
 	void ConfigureInbound(HANDLER_T* handler, void (HANDLER_T::*dispatch)(JellyLink& link, JellyMessage* pMessage))
 	{
-			ProtocolInfo* info = this->findByCRC( PROTOCOL_T::CRC );
-		
-			// TODO: check if this handler is already in the list of handlers
-
-			// new command/queue tuple
-			ProtocolTuple* tuple = new ProtocolTuple();
-			tuple->command = new JellyServiceDispatchCommand<HANDLER_T>(handler, dispatch);
-			tuple->queue   = nullptr;
-
-			// add to list of handlers
-			info->handlers.push_back( tuple);
+		JellyProtocol* info = FindByCRC( PROTOCOL_T::CRC );
+		if(info == nullptr)
+		{
+			info = new JellyProtocol(PROTOCOL_T::NAME, PROTOCOL_T::CRC);
+			m_Protocols.push_back(info);
+		}
+		info->AddHandler( new JellyServiceDispatchCommand<HANDLER_T>(handler, dispatch));
 	}
+
 	template<typename PROTOCOL_T, typename LOCK_T, typename HANDLER_T>
 	void ConfigureInbound(HANDLER_T* handler, void (HANDLER_T::*dispatch)(JellyLink& link, JellyMessage* pMessage), LOCK_T& lock)
 	{
-			ProtocolInfo* info = this->findByCRC( PROTOCOL_T::CRC );
-		
-			// TODO: check if this handler is already in the list of handlers
-
-			// new command/queue tuple
-			ProtocolTuple* tuple = new ProtocolTuple();
-			tuple->command = new JellyServiceLockableDispatchCommand<HANDLER_T, LOCK_T>(handler, dispatch, lock);
-			tuple->queue   = nullptr;
-
-			// add to list of handlers
-			info->handlers.push_back( tuple);
+		JellyProtocol* info = FindByCRC( PROTOCOL_T::CRC );
+		if(info == nullptr)
+		{
+			info = new JellyProtocol(PROTOCOL_T::NAME, PROTOCOL_T::CRC);
+			m_Protocols.push_back(info);
+		}
+		info->AddHandler( new JellyServiceLockableDispatchCommand<LOCK_T, HANDLER_T>(handler, dispatch, lock));
 	}
 
 	/**
@@ -140,82 +193,68 @@ public:
 	template< typename PROTOCOL_T, typename HANDLER_T>
 	void ConfigureInbound(HANDLER_T* handler, JellyMessageQueue* queue)
 	{
-		ProtocolInfo* info = findByCRC( PROTOCOL_T::CRC );
-		// find the matching handler
-		for(std::list<ProtocolTuple*>::iterator it = info->handlers.begin();
-			it != info->handlers.end();
-			it++
-			)
+		JellyProtocol* info = FindByCRC( PROTOCOL_T::CRC );
+		if(info == nullptr)
 		{
-			if( (*it)->command->TargetObject() == handler )
-			{
-				// we found the match, assign the queue to use
-				(*it)->queue = queue;
-				break;
-			}
+			info = new JellyProtocol(PROTOCOL_T::NAME, PROTOCOL_T::CRC);
+			m_Protocols.push_back(info);
 		}
+		info->AddQueue(queue, handler);
 	}
 
 	template<typename PROTOCOL_T>
 	void ConfigureOutbound()
 	{
 		// Calling this will CREATE a new entry for the protocol
-		findByCRC( PROTOCOL_T::CRC );
+		JellyProtocol* info = FindByCRC( PROTOCOL_T::CRC );
+		if(info == nullptr)
+		{
+			info = new JellyProtocol();
+			m_Protocols.push_back(info);
+		}
 	}
 
+	JellyProtocol* FindByCRC(JELLY_U32 crc)
+	{
+		for(std::list<JellyProtocol*>::iterator it = m_Protocols.begin();
+			it != m_Protocols.end();
+			it++)
+		{
+			if( (*it)->crc == crc)
+			{
+				return *it;
+			}
+		}
+		return 0;
+	}
+
+	JellyProtocol* FindByName(const char* name)
+	{
+		for(std::list<JellyProtocol*>::iterator it = m_Protocols.begin();
+			it != m_Protocols.end();
+			it++)
+		{
+			if( strcmp( (*it)->name,name) == 0)
+			{
+				return *it;
+			}
+		}
+		return 0;
+	}
+
+	void ForEach( void (*fptr)(JellyProtocol* p, void* ctx), void* ctx)
+	{
+		for( std::list<JellyProtocol*>::iterator it = m_Protocols.begin();
+			it != m_Protocols.end();
+			it++)
+		{
+			fptr( *it, ctx);
+		}
+	}
 protected:
 
-	template<class LOCK_T>
-	struct Lock_Configure
-	{
-		static void ConfigureInbound(JellyRouteConfig* self)
-		{
-			ProtocolInfo* info = self->findByCRC( PROTOCOL_T::CRC );
-		
-			// TODO: check if this handler is already in the list of handlers
-
-			// new command/queue tuple
-			ProtocolTuple* tuple = new ProtocolTuple();
-			tuple->command = new JellyServiceDispatchCommand<HANDLER_T,LOCK_T>(handler, dispatch);
-			tuple->queue   = nullptr;
-
-			// add to list of handlers
-			info->handlers.push_back( tuple);
-		}
-	};
-
-	// TODO: rename this into something better
-	struct ProtocolTuple
-	{
-		JellyMessageQueue*    queue;
-		JellyDispatchCommand* command;
-	};
-
-	struct ProtocolInfo
-	{
-		std::list<ProtocolTuple*> handlers;	// delegate for receiving
-	};
-
-	ProtocolInfo* findByCRC(JELLY_U32 crc)
-	{
-		ProtocolInfo* ret=0;
-		std::map<JELLY_U32, ProtocolInfo*>::iterator match = knownProtocols.find(crc);
-		if(match == knownProtocols.end() )
-		{
-			// not found
-			ret = new ProtocolInfo();
-			knownProtocols[crc] = ret;			
-		}else
-		{
-			ret = match->second;
-		}
-
-		return ret;
-	}
-	// list of known protocols
-	std::map<JELLY_U32, ProtocolInfo*> knownProtocols;
-	//ProtocolInfo knownProtocols[256];
-	//int  protocolCount;
+	// List of protcols we know about
+	std::list<JellyProtocol*> m_Protocols;
 };
 
 

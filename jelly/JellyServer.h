@@ -3,87 +3,83 @@
 #include "JellyTypes.h"
 #include "JellyRouteConfig.h"
 #include "JellyMessage.h"
+#include "JellyConnection.h"
+#include "Net.h"
+
+#include <unordered_map>
 
 
-/**
-	Remote Jelly server
- */
-class JellyClient
-{
-public:
-	JELLY_RESULT Send(JellyID objectid, JellyMessage* msg);
-};
+
 class JellyServer
 {
 public:
+	JellyServer();
+
+	bool Start(JELLY_U16 port);
+	bool ConnectTo(const char* address);
 	/**
 		Sends message to specific object on remote server
 		@param server Remote service to send to
 		@param object id of object on remote server
 		@param msg    message to send
 	 */
-	JELLY_RESULT Send(JellyID server, JellyID objectId, JellyMessage* msg);
+	JELLY_RESULT Send(JellyID server, ObjectID objectId, JellyMessage* msg);
+
+	/**
+	 Sends to a specfic service/server
+	 */
+	JELLY_RESULT Send(JellyID server, JellyMessage* msg);
 	
 	/**
 		Sends message to service/service type
-		@param server  id of server
+		@param type    type of service to send to
 		@param msg     message to send
 	 */
-	JELLY_RESULT Broadcast(JellyID server, JellyMessage* msg);
-	// send a message to a specific object
-	JELLY_RESULT Send(ObjectID obj, JellyMessage* msg)
-	{
-		msg->destination = obj;
-		m_RouteConfig.Route(m_Link, msg);
+	JELLY_RESULT Broadcast(int type, JellyMessage* msg);
 
-		return JELLY_OK;
-	}
+	/**
+	  Sends a message to a specific object. This sends to all
+	  services that support the protocol
+	*/
+	JELLY_RESULT Send(ObjectID obj, JellyMessage* msg);
 
 	/**
 		Dispatch messages found in the queue
 		@param queue   Queue of messages that were received in the past
 		@param handler Handler to dispatch messages to
 	 */
-	void ProcessQueue(JellyMessageQueue* queue, void* handler)
-	{
-		JellyLink link;
-		JellyMessage* msg;
-		queue->Dequeue(link, msg);
-		m_RouteConfig.Route(link,msg, handler);
-	}
+	void ProcessQueue(JellyMessageQueue* queue, void* handler);
 
 	JellyRouteConfig& GetRouteConfig(){ return m_RouteConfig; }
+
+	JellyID GetID(){ return m_ID; }
 
 protected:
 	JellyRouteConfig m_RouteConfig;
 	JellyLink        m_Link; // link to ourself
+	JellyID          m_ID;
+
+	typedef std::unordered_map<JellyID, JellyConnection*> ConnectionMap;
+	typedef std::unordered_map<Net::Socket_Id, JellyConnection*> ClientSocketMap;
+	typedef std::map<Net::Socket_Id, JellyServer*>               ServerSocketMap;
+
+	ConnectionMap              m_Connections;	
+	static ClientSocketMap     s_Clients;
+	static ServerSocketMap     s_KnownConnections;
+
+	static Net::ops s_NetOps;
+	static Net::ops s_ClientNetOps;
+	
+	static void net_state_changed(Net::Socket_Id id, Net::State state);
+	static void net_accepted(Net::Socket_Id id, Net::Socket_Id other, Net::Address& address);
+	static void net_received(Net::Socket_Id id, void* data, size_t len);
+
+	static JellyServer* Find(Net::Socket_Id id);
+	static JellyConnection* FindClient(Net::Socket_Id id);
+	/**
+	A new client that hasn't negotiated protocols yet..
+	 */
+	static void AddPending(Net::Socket_Id id,JellyConnection* client);
 };
 
-/*
-message_type = service | object | negotiation | ping
-message_id   = 0 to 0xFFFF
-
-json message?
-{
-    "_msgID":10,
-    "type":6, 
-    "error":0,
-    "desc":{
-        "m_id":"T2R00S40.00E14815726P10987H127.0.0.1:14001",
-		//  T 2                 type?
-		//  R 00
-		//  S 40.00             32bits?
-		//  E 14815726          24 bits?  32bits?
-		//  P 10987             16 bits?
-		//  H 127.0.0.1:14001   48bits
-        "m_host":"127.0.0.1",
-        "m_partitionID":0,
-        "m_configID":0,
-        "m_buildNum":0,
-        "m_type":40,
-        "m_subType":0
-    }
-}
-
-*/
 #endif //__JELLY_SERVER_H__

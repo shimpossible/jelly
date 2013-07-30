@@ -14,9 +14,11 @@ void JellyRouteConfig::Route(JellyLink& link, JellyMessage* msg, void* handler)
 {
 	unsigned int crc    = msg->GetProtocolCRC();
 	// TODO: calling this creates a NEW object, we dont want to do that
-	ProtocolInfo* info = findByCRC(crc);
+	JellyProtocol* proto = FindByCRC(crc);
 		
-	if(info->handlers.empty() == false)
+	(*proto)(link,msg);
+
+	/*
 	{
 		// call all handlers
 		for(std::list<ProtocolTuple*>::iterator itr = info->handlers.begin();
@@ -42,4 +44,5 @@ void JellyRouteConfig::Route(JellyLink& link, JellyMessage* msg, void* handler)
 			}
 		}
 	}
+	*/
 }

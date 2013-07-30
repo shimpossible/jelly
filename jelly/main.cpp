@@ -4,19 +4,6 @@
 #include "JellyMessage.h"
 #include "JellyServer.h"
 
-
-class BinaryDecoder{};
-class BinaryEncoder{
-public:
-	void BeginMessage(unsigned short code,const char* name){}
-	void Put(const char* field, unsigned int value){}
-	void EndMessage(unsigned short code,const char* name){}
-};
-class JSONDecoder{};
-class JSONEncoder{};
-
-
-
 class JellyCheckerProtocol
 {
 public:
@@ -27,6 +14,8 @@ public:
 	};
 	// computed CRC of messages
 	static const unsigned CRC = 0xCAFEBABE;
+	static const char*    NAME;
+
 	//NOTICE: Generated code DO NOT EDIT
 	template<typename HANDLER_T>
 	static JELLY_RESULT Dispatch(JellyLink& link, JellyMessage* pMessage,HANDLER_T* pHandler)
@@ -58,7 +47,7 @@ public:
 	}
 	*/
 };
-
+const char* JellyCheckerProtocol::NAME = "JellyCheckerProtocol";
 
 class CheckerHeal : public JellyMessage
 {
@@ -72,10 +61,13 @@ public:
 		value = 0;  // default value
 	}
 	// Message Decoders
-	bool Get(BinaryDecoder& decoder);
-	bool Get(JSONDecoder&   decoder);
-	bool Put(BinaryEncoder& encoder) const;
-	bool Put(JSONEncoder&   encoder) const;
+	virtual bool Get(BinaryDecoder& decoder){ return true; }
+	virtual bool Get(JSONDecoder&   decoder){ return true; }
+	virtual bool Put(BinaryEncoder& encoder) const;
+	virtual bool Put(JSONEncoder&   encoder) const
+	{
+		return true;
+	}
 
 	/**** DATA START ****/
 	int value;
@@ -131,7 +123,7 @@ public:
 	Checker(JellyServer* server)
 	{
 		m_pServer = server;
-		m_id = 0;
+		m_id = ObjectID::Create();
 	}
 	JellyID GetServer()
 	{
@@ -239,13 +231,29 @@ public:
 	}
 };
 
+#include "Net.h"
 
 int main(int argc, char* argv[])
 {
+	Net::init();
+	/*
+	while(true)
+	{
+		Net::process();
+	}
+	*/
 	
 	JellyServer server;
+	server.Start(1234);
+	server.ConnectTo("127.0.0.1:1234");
 	BoardServer bserver(&server);
 	bserver.Configure();
+
+	while(true)
+	{
+		Net::process();
+	}
+
 
 	Checker ch(&server);
 	bserver.Add(&ch);
