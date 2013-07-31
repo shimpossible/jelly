@@ -34,7 +34,11 @@ public:
 	/**
 	 Sends to a specific object
 	 */
-	JELLY_RESULT Send(ObjectID objectid, JellyMessage* msg){ return JELLY_OK; }
+	JELLY_RESULT Send(ObjectID objectid, JellyMessage* msg)
+	{
+		// TODO: make this a message id
+		return Send(msg);
+	}
 
 	void Receive(void* data, size_t len);
 
@@ -64,6 +68,7 @@ protected:
 
 	JELLY_RESULT Send(teDataChain* chain);
 	bool         ReceiveInit(teDataChain* chain);
+	bool         ReceiveMsg(teDataChain* chain);
 
 	// from CRC to ChannelId
 	typedef std::map<JELLY_U32, JELLY_U32> ProtocolMap;

@@ -10,7 +10,7 @@ public:
 	// List of Message IDs in this Protocol
 	enum Codes
 	{
-		JELLY_MSG_CheckerHeal
+		JELLY_MSG_CheckerHeal = 0x1000
 	};
 	// computed CRC of messages
 	static const unsigned CRC = 0xCAFEBABE;
@@ -244,12 +244,14 @@ int main(int argc, char* argv[])
 	*/
 	
 	JellyServer server;
-	server.Start(1234);
-	server.ConnectTo("127.0.0.1:1234");
 	BoardServer bserver(&server);
 	bserver.Configure();
 
-	while(true)
+	// start AFTER everything is configured
+	server.Start(1234);
+	server.ConnectTo("127.0.0.1:1234");
+
+	for(int i=0;i<100;i++)
 	{
 		Net::process();
 	}
@@ -262,6 +264,10 @@ int main(int argc, char* argv[])
 
 	server.Send( ch.GetID(), &msg);
 
+	while(true)
+	{
+		Net::process();
+	}
 	bserver.Idle();
 	return 0;
 }

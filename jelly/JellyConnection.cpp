@@ -93,39 +93,37 @@ JELLY_RESULT JellyConnection::Send(JellyMessage* msg)
 	ProtocolMap::iterator found = this->m_KnownProtocols.find(pcrc);
 	if(found != m_KnownProtocols.end() )
 	{
-		int channelId = found->second;
+		JELLY_U8 channelId = found->second;
+		JELLY_U8 msgType = JELLY_MESSAGE_SERVICE;
+		JELLY_U16 msgId = msg->GetCode();
 
-		/*
 		// in the list of known protocols
 		teDataChain payload;
 		msg->Put( &payload );
 		// payload includes the message id
 		
-		int msgSize = payload.TotalLength();
+		int msgSize = payload.Size();
 		int sizeBytes = 1;
 		if(msgSize >= 0x200000)    sizeBytes += 3;
 		else if(msgSize >= 0x3FFF) sizeBytes += 2;
 		else if(msgSize >= 0x80  ) sizeBytes += 1;
 
-		teDataChain headerChain(sizeBytes + 2);
-		JELLY_U8* ptr = (JELLY_U8*)headerChain.Data();
-
 		// 1-3 bytes size
-		JELLY_U32 encodedSize = Encode7Bit(sizeBytes+2);				
-		memcpy(ptr, &encodedSize,sizeBytes); ptr += sizeBytes;
+		JELLY_U32 encodedSize = Encode7Bit(msgSize + 4);
+		teDataChain fullMessage;
+		fullMessage.AddTail(&encodedSize, sizeBytes);
 
 		// channel id
-		*ptr++ = channelId;
-
-		// Message Type
-		*ptr++ = JELLY_MESSAGE_SERVICE;			// Normal SERVICE Message
+		// message type
+		// message id
+		fullMessage.AddTail(&channelId, sizeof(channelId));		
+		fullMessage.AddTail(&msgType, sizeof(msgType));
+		fullMessage.AddTail(&msgId, sizeof(msgId));
 
 		// payload
-		headerChain.Add(&payload);
+		fullMessage.AddTail(&payload);
 		
-		return Send(&headerChain);
-		*/
-		return JELLY_OK;
+		return Send(&fullMessage);
 	}
 
 	return JELLY_NOT_FOUND;
@@ -161,9 +159,56 @@ void JellyConnection::Receive(void* data, size_t len)
 			// TODO: should loop once more if there are more bytes left
 			break;
 		case CONNECTED:
+			loop = ReceiveMsg(&m_ReceiveChain);
 			break;
 		}
 	}while(loop);
+}
+
+bool JellyConnection::ReceiveMsg(teDataChain* chain)
+{
+	bool loop = false;
+
+	do
+	{
+		loop = false;
+		// enough bytes for a size?
+		if(chain->Size() >= 3)
+		{
+			JELLY_U8 tmp[3];
+			chain->CopyTo(&tmp, sizeof(tmp));
+			JELLY_U32 encodedBytes = 1;
+			if(tmp[0] & 0x80) encodedBytes+=1;
+			if(tmp[1] & 0x80) encodedBytes+=1;
+			// should only encode 3 bytes max..
+			//if(tmp[2] & 0x80) encodedBytes+=1;
+
+			JELLY_U32 size = Decode7Bit(tmp);
+
+			// enough for a full message?
+			if(chain->Size() >= size+encodedBytes)
+			{
+				// shift off the 'size'
+				chain->Shift(&tmp, encodedBytes);
+
+				JELLY_U8  channel_id;
+				JELLY_U8  message_type;
+				JELLY_U16 message_id;
+
+				JELLY_U32 payloadSize =  size - (sizeof(channel_id) + sizeof(message_type) + sizeof(message_id));
+				chain->Shift(&channel_id, sizeof(channel_id));
+				chain->Shift(&message_type, sizeof(message_type));
+				chain->Shift(&message_id, sizeof(message_id));
+
+				JELLY_U8 payload_tmp[1500];
+				chain->Shift(&payload_tmp, payloadSize);
+				loop = true;
+			}
+
+		}
+	}while(loop);
+
+	return loop;
 }
 
 /**
@@ -222,6 +267,7 @@ bool JellyConnection::ReceiveInit(teDataChain* chain)
 
 					m_State = CONNECTED;
 					printf("Connected\r\n");
+					this->m_Server->m_Connections[ m_Id] = this;
 					return true;
 				}else
 				{

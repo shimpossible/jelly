@@ -12,6 +12,7 @@
 
 class JellyServer
 {
+	friend JellyConnection;
 public:
 	JellyServer();
 

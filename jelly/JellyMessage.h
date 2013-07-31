@@ -59,6 +59,22 @@ public:
 			curr = n;
 		}
 	}
+
+	void AddTail(teDataChain* other)
+	{
+		teDataChainNode* node = other->m_Head.next;		
+		node->prev = m_Head.prev;
+		m_Head.prev->next = node;
+
+		other->m_Head.prev->next = &m_Head;
+		m_Head.prev = other->m_Head.prev;
+
+		m_Size += other->Size();
+		
+		other->m_Head.next = &other->m_Head;
+		other->m_Head.prev = &other->m_Head;
+	}
+
 	/**
 	 Add node to the END of the chain
 	*/
