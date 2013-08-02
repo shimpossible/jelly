@@ -114,7 +114,8 @@ JELLY_RESULT JellyServer::Send(ObjectID obj, JellyMessage* msg)
 		(*it).second->Send(obj, msg);
 	}
 
-	m_RouteConfig.Route(m_Link, msg);
+	// no need to send to local server, since local should have a connection to itself
+	//	m_RouteConfig.Route(m_Link, msg);
 
 	return JELLY_OK;
 }
@@ -128,8 +129,11 @@ void JellyServer::ProcessQueue(JellyMessageQueue* queue, void* handler)
 {
 	JellyLink link;
 	JellyMessage* msg;
-	queue->Dequeue(link, msg);
-	m_RouteConfig.Route(link,msg, handler);
+	while(queue->Empty() == false)
+	{
+		queue->Dequeue(link, msg);
+		m_RouteConfig.Route(link,msg, handler);
+	}
 }
 
 

@@ -21,6 +21,11 @@ public:
 		msg   = m_Queue.front()->msg;
 		m_Queue.pop();
 	}
+
+	bool Empty()
+	{
+		return m_Queue.empty();
+	}
 protected:
 	struct Tuple
 	{

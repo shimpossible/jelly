@@ -16,7 +16,7 @@ void JellyRouteConfig::Route(JellyLink& link, JellyMessage* msg, void* handler)
 	// TODO: calling this creates a NEW object, we dont want to do that
 	JellyProtocol* proto = FindByCRC(crc);
 		
-	(*proto)(link,msg);
+	(*proto)(link,msg, handler);
 
 	/*
 	{

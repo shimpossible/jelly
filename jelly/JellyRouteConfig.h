@@ -91,14 +91,18 @@ class JellyProtocol
 	};
 	std::list<Tuple>          m_Handlers;
 public:
+	typedef JellyMessage* (*CreatePtr)(JELLY_U16 msgId);
+	const CreatePtr           create;
 	const char*               name;      // ASCII name of protocol
 	JELLY_U32                 crc;	     // CRC of protocol
 
-	JellyProtocol(const char* name, JELLY_U32 crc)
+	JellyProtocol(const char* name, JELLY_U32 crc, CreatePtr create)
+		: create(create)
 	{
 		this->name = name;
 		this->crc  = crc;
 	}
+
 	void AddHandler(JellyDispatchCommand* command)
 	{
 		Tuple t;
@@ -127,18 +131,25 @@ public:
 	/**
 	 Dispatch the incomming message
 	 */
-	void operator()(JellyLink& link, JellyMessage* msg)
+	void operator()(JellyLink& link, JellyMessage* msg, void* handler)
 	{
-		for(std::list<Tuple>::iterator it = m_Handlers.begin();
+		for(auto it = m_Handlers.begin();
 			it != m_Handlers.end();
 			it++)
 		{
-			if(it->queue!=0)
-			{
-				it->queue->Add(link, msg);
-			}else
+			if(handler && it->command->TargetObject() == handler)
 			{
 				it->command->Dispatch(link,msg);
+			}
+			else
+			{
+				if(it->queue!=0)
+				{
+					it->queue->Add(link, msg);
+				}else
+				{
+					it->command->Dispatch(link,msg);
+				}
 			}
 		}
 	}
@@ -166,7 +177,7 @@ public:
 		JellyProtocol* info = FindByCRC( PROTOCOL_T::CRC );
 		if(info == nullptr)
 		{
-			info = new JellyProtocol(PROTOCOL_T::NAME, PROTOCOL_T::CRC);
+			info = new JellyProtocol(PROTOCOL_T::NAME, PROTOCOL_T::CRC, PROTOCOL_T::CreateMessage);
 			m_Protocols.push_back(info);
 		}
 		info->AddHandler( new JellyServiceDispatchCommand<HANDLER_T>(handler, dispatch));
@@ -178,7 +189,7 @@ public:
 		JellyProtocol* info = FindByCRC( PROTOCOL_T::CRC );
 		if(info == nullptr)
 		{
-			info = new JellyProtocol(PROTOCOL_T::NAME, PROTOCOL_T::CRC);
+			info = new JellyProtocol(PROTOCOL_T::NAME, PROTOCOL_T::CRC, PROTOCOL_T::CreateMessage);
 			m_Protocols.push_back(info);
 		}
 		info->AddHandler( new JellyServiceLockableDispatchCommand<LOCK_T, HANDLER_T>(handler, dispatch, lock));
@@ -196,7 +207,7 @@ public:
 		JellyProtocol* info = FindByCRC( PROTOCOL_T::CRC );
 		if(info == nullptr)
 		{
-			info = new JellyProtocol(PROTOCOL_T::NAME, PROTOCOL_T::CRC);
+			info = new JellyProtocol(PROTOCOL_T::NAME, PROTOCOL_T::CRC, PROTOCOL_T::CreateMessage);
 			m_Protocols.push_back(info);
 		}
 		info->AddQueue(queue, handler);

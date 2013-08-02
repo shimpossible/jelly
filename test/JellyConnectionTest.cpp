@@ -16,6 +16,7 @@ public:
 	{
 		return JELLY_OK;
 	}
+	static JellyMessage* CreateMessage(JELLY_U16 msgId){ return 0;}
 };
 class Proto2
 {
@@ -29,6 +30,7 @@ public:
 	{
 		return JELLY_OK;
 	}
+	static JellyMessage* CreateMessage(JELLY_U16 msgId){ return 0;}
 };
 
 const char* Proto1::NAME = "Proto1";

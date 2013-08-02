@@ -46,10 +46,16 @@ public:
 	 Get ChannelId for a given protocol CRC
 	*/
 	JELLY_S32 GetChannelId(JELLY_U32 crc);
+	/**
+	 Get CRC from Channel ID
+	 */
+	JELLY_RESULT GetCRC(JELLY_U32 channelId, JELLY_U32& crc);
 
 	void AddCommonProtocol(const char* name, JELLY_U32 crc);
 
 	JellyID GetID(){ return m_Id; }
+
+	JellyMessage* CreateMessageObject(JELLY_U32 protocol_crc, JELLY_U16 msgId);
 protected:
 
 	enum State
@@ -65,6 +71,7 @@ protected:
 	Net::Socket_Id m_Socket;
 	State          m_State;
 	JellyID        m_Id;
+	JellyLink      m_Link;
 
 	JELLY_RESULT Send(teDataChain* chain);
 	bool         ReceiveInit(teDataChain* chain);
@@ -72,7 +79,9 @@ protected:
 
 	// from CRC to ChannelId
 	typedef std::map<JELLY_U32, JELLY_U32> ProtocolMap;
+
 	ProtocolMap m_KnownProtocols;
+	std::map<JELLY_U32, JELLY_U32> m_IdToCRC;
 
 private:
 };

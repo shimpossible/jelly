@@ -248,11 +248,20 @@ protected:
 
 
 
-class BinaryDecoder{};
+class BinaryDecoder
+{
+public:
+	virtual void Get(const char* field, JELLY_U8& value)=0;
+	virtual void Get(const char* field, JELLY_U16& value)=0;
+	virtual void Get(const char* field, JELLY_U32& value)=0;
+};
+
 class BinaryEncoder{
 public:
 	virtual void BeginMessage(unsigned short code,const char* name)=0;
 	virtual void Put(const char* field, JellyID value)=0;
+	virtual void Put(const char* field, JELLY_U8 value)=0;
+	virtual void Put(const char* field, JELLY_U16 value)=0;
 	virtual void Put(const char* field, JELLY_U32 value)=0;
 	virtual void Put(const char* field, const char* value)=0;
 	virtual void EndMessage(unsigned short code,const char* name)=0;
@@ -260,6 +269,29 @@ public:
 class JSONDecoder{};
 class JSONEncoder{};
 
+
+class teRawBinaryDecoder : public BinaryDecoder
+{
+public:
+	teRawBinaryDecoder(teDataChain* chain)
+	{
+		m_Chain = chain;
+	}
+	virtual void Get(const char* field, JELLY_U8& value)
+	{
+		m_Chain->Shift(&value, sizeof(value));
+	}
+	virtual void Get(const char* field, JELLY_U16& value)
+	{
+		m_Chain->Shift(&value, sizeof(value));
+	}
+	virtual void Get(const char* field, JELLY_U32& value)
+	{
+		m_Chain->Shift(&value, sizeof(value));
+	}
+protected:
+	teDataChain* m_Chain;
+};
 
 class teRawBinaryEncoder : public BinaryEncoder
 {
@@ -283,10 +315,22 @@ public:
 		printf("Payload %s (ID): %08X\r\n", field, value);
 		m_Chain->AddTail( &value, sizeof(value) );
 	}
+
+	virtual void Put(const char* field, JELLY_U8 value)
+	{
+		printf("Payload %s (char): %08X\r\n", field, value);
+		m_Chain->AddTail( &value, sizeof(value) );
+	}
+
+	virtual void Put(const char* field, JELLY_U16 value)
+	{
+		printf("Payload %s (short): %08X\r\n", field, value);
+		m_Chain->AddTail( &value, sizeof(value) );
+	}
+
 	virtual void Put(const char* field, JELLY_U32 value)
 	{
 		printf("Payload %s (int): %08X\r\n", field, value);
-
 		m_Chain->AddTail( &value, sizeof(value) );
 	}
 	virtual void Put(const char* field, const char* value)

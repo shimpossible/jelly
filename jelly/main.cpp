@@ -4,18 +4,63 @@
 #include "JellyMessage.h"
 #include "JellyServer.h"
 
+class CheckerHeal : public JellyMessage
+{
+public:
+	static unsigned int   CRC;
+	static unsigned short CODE;
+	static const char*    NAME;
+
+	CheckerHeal() 
+	{
+		value = 0;  // default value
+	}
+	// Message Decoders
+	virtual bool Get(BinaryDecoder& decoder)
+	{
+		decoder.Get("value", value);
+		
+		return true; 
+	
+	}
+	virtual bool Get(JSONDecoder&   decoder){ return true; }
+	virtual bool Put(BinaryEncoder& encoder) const;
+	virtual bool Put(JSONEncoder&   encoder) const
+	{
+		return true;
+	}
+
+	/**** DATA START ****/
+	JELLY_U32 value;
+	/**** DATA STOP  ****/
+
+	virtual unsigned short GetCode(){ return CODE; }
+	virtual unsigned int   GetProtocolCRC();
+};
+
 class JellyCheckerProtocol
 {
 public:
 	// List of Message IDs in this Protocol
 	enum Codes
 	{
-		JELLY_MSG_CheckerHeal = 0x1000
+		JELLY_MSG_CheckerHeal = 0x1234
 	};
 	// computed CRC of messages
 	static const unsigned CRC = 0xCAFEBABE;
 	static const char*    NAME;
 
+	static JellyMessage* CreateMessage(JELLY_U16 msgId)
+	{
+		switch(msgId)
+		{
+		case JELLY_MSG_CheckerHeal:
+			return new CheckerHeal();
+		default:
+			// unknown type
+			return 0;
+		}
+	}
 	//NOTICE: Generated code DO NOT EDIT
 	template<typename HANDLER_T>
 	static JELLY_RESULT Dispatch(JellyLink& link, JellyMessage* pMessage,HANDLER_T* pHandler)
@@ -30,7 +75,7 @@ public:
 		}
 		return result;
 	}
-	/*
+	/* ?? what was this part for?
 	bool Put(DataChain* payload, int protocolType)
 	{
 		switch(protocolType)
@@ -39,7 +84,8 @@ public:
 			return false;
 		case JAM_PROTOCOL_BINARY_LITERAL:
 		case JAM_PROTOCOL_BINARY_COMPRESSED:
-			break;
+			teRawBinaryEncoder encoder(payload);
+			return Put(encoder);
 		case JAM_PROTOCOL_TEST_JSON_COMPRESSED:
 		case JAM_PROTOCOL_TEXT_JSON:
 			break;
@@ -47,39 +93,14 @@ public:
 	}
 	*/
 };
+
 const char* JellyCheckerProtocol::NAME = "JellyCheckerProtocol";
 
-class CheckerHeal : public JellyMessage
-{
-public:
-	static unsigned int   CRC;
-	static unsigned short CODE;
-	static const char*    NAME;
-
-	CheckerHeal() 
-	{
-		value = 0;  // default value
-	}
-	// Message Decoders
-	virtual bool Get(BinaryDecoder& decoder){ return true; }
-	virtual bool Get(JSONDecoder&   decoder){ return true; }
-	virtual bool Put(BinaryEncoder& encoder) const;
-	virtual bool Put(JSONEncoder&   encoder) const
-	{
-		return true;
-	}
-
-	/**** DATA START ****/
-	int value;
-	/**** DATA STOP  ****/
-
-	virtual unsigned short GetCode(){ return CODE; }
-	virtual unsigned int   GetProtocolCRC(){ return JellyCheckerProtocol::CRC; }
-};
 
 unsigned short CheckerHeal::CODE   = JellyCheckerProtocol::JELLY_MSG_CheckerHeal;
 unsigned int   CheckerHeal::CRC    = 0xABCDABCD;
 const char*    CheckerHeal::NAME   = "CheckerHeal";
+unsigned int   CheckerHeal::GetProtocolCRC(){ return JellyCheckerProtocol::CRC; }
 
 bool CheckerHeal::Put(BinaryEncoder& _encoder) const
 {
@@ -267,8 +288,9 @@ int main(int argc, char* argv[])
 	while(true)
 	{
 		Net::process();
-	}
-	bserver.Idle();
+
+		bserver.Idle();
+	}	
 	return 0;
 }
 
