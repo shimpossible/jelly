@@ -6,59 +6,7 @@
 #include "JellyMessageQueue.h"
 #include <list>
 #include <map>
-
-class JellyDispatchCommand
-{
-public:
-	virtual void Dispatch(JellyLink&, JellyMessage*)=0;
-	void* TargetObject(){ return obj;}
-
-protected:
-	void* obj;
-};
-
-
-template<typename T>
-class JellyServiceDispatchCommand : public JellyDispatchCommand
-{
-	void (T::*fptr)(JellyLink&, JellyMessage*);
-public:
-	JellyServiceDispatchCommand(T* o, void (T::*dispatch)(JellyLink&, JellyMessage*) )
-	{
-		obj = o;
-		fptr = dispatch;
-	}
-
-	virtual void Dispatch(JellyLink& link, JellyMessage* msg)
-	{
-		T* t = (T*)obj;
-		(t->*fptr)(link,msg);
-	}
-};
-
-template<class LOCK_T,typename T>
-class JellyServiceLockableDispatchCommand : public JellyDispatchCommand
-{
-	LOCK_T& m_Lock;
-	void (T::*fptr)(JellyLink&, JellyMessage*);
-public:
-	JellyServiceLockableDispatchCommand(T* o, void (T::*dispatch)(JellyLink&, JellyMessage*), LOCK_T& lock )
-		: m_Lock(lock)
-	{
-		
-		obj = o;
-		fptr = dispatch;
-	}
-
-	virtual void Dispatch(JellyLink& link, JellyMessage* msg)
-	{
-		m_Lock.Lock(msg,0);
-		T* t = (T*)obj;
-		(t->*fptr)(link,msg);
-		m_Lock.Unlock(msg);
-	}
-};
-
+#include "JellyProtocol.h"
 
 
 /**
@@ -80,79 +28,6 @@ public:
 
 protected:
 	JellyMessageQueue* m_pQueue;
-};
-
-class JellyProtocol
-{
-	struct Tuple
-	{
-	   JellyDispatchCommand*  command;  // handler to dispatch the message
-	   JellyMessageQueue*     queue;    // queue messages here if we can't dispatch
-	};
-	std::list<Tuple>          m_Handlers;
-public:
-	typedef JellyMessage* (*CreatePtr)(JELLY_U16 msgId);
-	const CreatePtr           create;
-	const char*               name;      // ASCII name of protocol
-	JELLY_U32                 crc;	     // CRC of protocol
-
-	JellyProtocol(const char* name, JELLY_U32 crc, CreatePtr create)
-		: create(create)
-	{
-		this->name = name;
-		this->crc  = crc;
-	}
-
-	void AddHandler(JellyDispatchCommand* command)
-	{
-		Tuple t;
-		t.command = command;
-		t.queue   = 0;
-		m_Handlers.push_back(t);
-	}
-
-	/**
-	Add a message queue for the given handler
-	 */
-	void AddQueue(JellyMessageQueue* queue, void* handler)
-	{
-		for(std::list<Tuple>::iterator it = m_Handlers.begin();
-			it != m_Handlers.end();
-			it++)
-		{
-			if(it->command->TargetObject() == handler)
-			{
-				it->queue = queue;
-				break;
-			}
-		}
-	}
-
-	/**
-	 Dispatch the incomming message
-	 */
-	void operator()(JellyLink& link, JellyMessage* msg, void* handler)
-	{
-		for(auto it = m_Handlers.begin();
-			it != m_Handlers.end();
-			it++)
-		{
-			if(handler && it->command->TargetObject() == handler)
-			{
-				it->command->Dispatch(link,msg);
-			}
-			else
-			{
-				if(it->queue!=0)
-				{
-					it->queue->Add(link, msg);
-				}else
-				{
-					it->command->Dispatch(link,msg);
-				}
-			}
-		}
-	}
 };
 
 class JellyRouteConfig
@@ -189,7 +64,7 @@ public:
 		JellyProtocol* info = FindByCRC( PROTOCOL_T::CRC );
 		if(info == nullptr)
 		{
-			info = new JellyProtocol(PROTOCOL_T::NAME, PROTOCOL_T::CRC, PROTOCOL_T::CreateMessage);
+			info = new PROTOCOL_T();
 			m_Protocols.push_back(info);
 		}
 		info->AddHandler( new JellyServiceLockableDispatchCommand<LOCK_T, HANDLER_T>(handler, dispatch, lock));
@@ -207,7 +82,7 @@ public:
 		JellyProtocol* info = FindByCRC( PROTOCOL_T::CRC );
 		if(info == nullptr)
 		{
-			info = new JellyProtocol(PROTOCOL_T::NAME, PROTOCOL_T::CRC, PROTOCOL_T::CreateMessage);
+			info = new PROTOCOL_T();
 			m_Protocols.push_back(info);
 		}
 		info->AddQueue(queue, handler);
@@ -225,13 +100,13 @@ public:
 		}
 	}
 
-	JellyProtocol* FindByCRC(JELLY_U32 crc)
+	JellyProtocol* FindByCRC(JELLY_U32 id)
 	{
 		for(std::list<JellyProtocol*>::iterator it = m_Protocols.begin();
 			it != m_Protocols.end();
 			it++)
 		{
-			if( (*it)->crc == crc)
+			if( (*it)->id == id)
 			{
 				return *it;
 			}

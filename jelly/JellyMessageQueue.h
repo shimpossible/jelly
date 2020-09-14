@@ -6,6 +6,7 @@
 
 class JellyMessageQueue
 {
+	// TODO: make this queue not allocate new objects..
 public:
 	void Add(JellyLink& link, JellyMessage* msg)
 	{
@@ -17,8 +18,11 @@ public:
 
 	void Dequeue(JellyLink& link, JellyMessage*& msg)
 	{
-		link  = m_Queue.front()->link;
-		msg   = m_Queue.front()->msg;
+		Tuple* t = m_Queue.front();
+		link  = t->link;
+		msg   = t->msg;
+
+		delete t;
 		m_Queue.pop();
 	}
 

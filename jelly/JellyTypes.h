@@ -26,6 +26,9 @@ typedef enum JELLY_MESSAGE_TYPE
 	JELLY_MESSAGE_SERVICE,
 } JELLY_MESSAGE_TYPE;
 
+class teBinaryEncoder;
+class teBinaryDecoder;
+
 /** 128 bit UUID */
 template<unsigned int>
 struct JellyGUID
@@ -43,6 +46,23 @@ struct JellyGUID
 	static JellyGUID Create();
 
 	bool operator==(const JellyGUID& b) const;
+
+	bool Put(teBinaryEncoder& enc)
+	{
+		enc.Put("a", a);
+		enc.Put("b", b);
+		enc.Put("c", c);
+		enc.Put("d", d);
+		return true;
+	}
+	bool Get(teBinaryDecoder& dec)
+	{
+		dec.Get("a", a);
+		dec.Get("b", b);
+		dec.Get("c", c);
+		dec.Get("d", d);
+		return true;
+	}
 };
 
 

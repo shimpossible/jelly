@@ -1,5 +1,5 @@
 #include "JellyServer.h"
-#include "rpc.h" // for uuid
+#include "teDataChain.h"
 
 Net::ops JellyServer::s_NetOps =
 {
@@ -17,35 +17,6 @@ Net::ops JellyServer::s_ClientNetOps =
 
 JellyServer::ServerSocketMap  JellyServer::s_KnownConnections;
 JellyServer::ClientSocketMap  JellyServer::s_Clients;
-
-JellyID JellyID::Create()
-{
-	JellyID uuid;
-	::ZeroMemory(&uuid, sizeof(uuid));
-	::UuidCreate((UUID*)&uuid);
-	return uuid;
-}
-
-ObjectID ObjectID::Create()
-{
-	ObjectID uuid;
-	::ZeroMemory(&uuid, sizeof(uuid));
-	::UuidCreate((UUID*)&uuid);
-
-	return uuid;
-}
-
-size_t JellyID_Hash(const JellyID& v)
-{
-	RPC_STATUS status;
-	return UuidHash((UUID*)&v, &status);
-}
-
-bool JellyID::operator==(const JellyID& other) const
-{
-	return memcmp(this, &other, sizeof(*this))==0;
-}
-
 
 JellyServer::JellyServer()
 	: m_ID(JellyID::Create() )
@@ -66,7 +37,7 @@ bool JellyServer::ConnectTo(const char* address)
 bool JellyServer::Start(JELLY_U16 port)
 {
 	Net::Socket_Id id = Net::open_and_listen(port, &s_NetOps);
-	if(id == Net::InvalidSocket ) return false;
+	if (id == Net::InvalidSocket ) return false;
 
 	s_KnownConnections[id] = this;
 
@@ -132,7 +103,10 @@ void JellyServer::ProcessQueue(JellyMessageQueue* queue, void* handler)
 	while(queue->Empty() == false)
 	{
 		queue->Dequeue(link, msg);
-		m_RouteConfig.Route(link,msg, handler);
+		m_RouteConfig.Route(link, msg, handler);
+
+		// Release message
+		delete msg;
 	}
 }
 
@@ -208,9 +182,9 @@ void JellyServer::AddPending(Net::Socket_Id id, JellyConnection* client)
 	// start negotiation with other box
 
 	teDataChain chain;
-	teRawBinaryEncoder encoder ( &chain );
+	teBinaryEncoder encoder ( &chain );
 	client->SendConnectRequest(&encoder);
 
 	// flush out the chain
-	chain.ForEach( __send, &client->m_Socket  );
+	Net::send(client->m_Socket, chain.Buffer(), chain.Length(), 0);
 }

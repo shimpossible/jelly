@@ -3,6 +3,7 @@
 
 #include "JellyMessage.h"
 #include "JellyServer.h"
+#include "JellyProtocol.h"
 
 class CheckerHeal : public JellyMessage
 {
@@ -16,7 +17,7 @@ public:
 		value = 0;  // default value
 	}
 	// Message Decoders
-	virtual bool Get(BinaryDecoder& decoder)
+	virtual bool Get(teBinaryDecoder& decoder)
 	{
 		decoder.Get("value", value);
 		
@@ -24,7 +25,7 @@ public:
 	
 	}
 	virtual bool Get(JSONDecoder&   decoder){ return true; }
-	virtual bool Put(BinaryEncoder& encoder) const;
+	virtual bool Put(teBinaryEncoder& encoder) const;
 	virtual bool Put(JSONEncoder&   encoder) const
 	{
 		return true;
@@ -38,29 +39,88 @@ public:
 	virtual unsigned int   GetProtocolCRC();
 };
 
-class JellyCheckerProtocol
+class JellyCheckerProtocol : public JellyProtocol
 {
 public:
 	// List of Message IDs in this Protocol
 	enum Codes
 	{
-		JELLY_MSG_CheckerHeal = 0x1234
+		JELLY_MSG_CheckerHeal = 0x00001234
 	};
+
 	// computed CRC of messages
 	static const unsigned CRC = 0xCAFEBABE;
 	static const char*    NAME;
 
-	static JellyMessage* CreateMessage(JELLY_U16 msgId)
+	JellyCheckerProtocol()
+		: JellyProtocol(NAME, CRC)
 	{
-		switch(msgId)
+	}
+
+	virtual JellyMessage* Create(JELLY_U32 id, Allocator& alloc)
+	{
+		JellyMessage* result = 0;
+		void* buffer = 0;
+		switch (id)
 		{
-		case JELLY_MSG_CheckerHeal:
-			return new CheckerHeal();
+		case JELLY_MSG_CheckerHeal:			
+			buffer = alloc.Allocate(sizeof(CheckerHeal));
+			result = new (buffer) CheckerHeal();
+			break;
 		default:
-			// unknown type
-			return 0;
+			// no match
+			break;
+		}
+
+		return result;
+	}
+
+	bool Put(JellyMessage* msg, int protocolType, teDataChain* chain)
+	{
+		switch (protocolType)
+		{
+		default:
+		case 0:
+			teBinaryEncoder enc(chain);
+			return Put(msg, enc);
 		}
 	}
+	bool Put(JellyMessage* msg, teBinaryEncoder& enc)
+	{
+		JELLY_U32 code = msg->GetCode();
+		switch (code)
+		{
+		case JELLY_MSG_CheckerHeal:
+			return enc.Put("msg", *(CheckerHeal*)msg);
+			break;
+		}
+
+		return false;
+	}
+
+	bool Get(JellyMessage* msg, int protocolType, teDataChain* chain)
+	{
+		switch (protocolType)
+		{
+		default:
+		case 0:
+			teBinaryDecoder enc(chain);
+			return Get(msg, enc);
+		}
+	}
+	bool Get(JellyMessage* msg, teBinaryDecoder& dec)
+	{
+		JELLY_U32 code = msg->GetCode();
+		switch (code)
+		{
+		case JELLY_MSG_CheckerHeal:
+			return dec.Get("msg", *(CheckerHeal*)msg);
+			break;
+		}
+
+		return false;
+	}
+
 	//NOTICE: Generated code DO NOT EDIT
 	template<typename HANDLER_T>
 	static JELLY_RESULT Dispatch(JellyLink& link, JellyMessage* pMessage,HANDLER_T* pHandler)
@@ -102,7 +162,7 @@ unsigned int   CheckerHeal::CRC    = 0xABCDABCD;
 const char*    CheckerHeal::NAME   = "CheckerHeal";
 unsigned int   CheckerHeal::GetProtocolCRC(){ return JellyCheckerProtocol::CRC; }
 
-bool CheckerHeal::Put(BinaryEncoder& _encoder) const
+bool CheckerHeal::Put(teBinaryEncoder& _encoder) const
 {
 	_encoder.BeginMessage(CODE, NAME);
 	_encoder.Put("value", value);
@@ -283,13 +343,13 @@ int main(int argc, char* argv[])
 	CheckerHeal msg;
 	msg.value = 100;
 
-	server.Send( ch.GetID(), &msg);
-
 	while(true)
 	{
 		Net::process();
 
 		bserver.Idle();
+
+		server.Send(ch.GetID(), &msg);
 	}	
 	return 0;
 }

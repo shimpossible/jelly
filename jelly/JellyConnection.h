@@ -5,6 +5,8 @@
 #include "JellyTypes.h"
 #include "JellyMessage.h"
 #include "Net.h"
+#include "teBinaryEncoder.h"
+#include "Allocator.h"
 
 /**
 	Remote Jelly server
@@ -19,7 +21,7 @@ public:
 	/**
 	 Send initial connection request
 	 */
-	void SendConnectRequest(BinaryEncoder* encoder);
+	void SendConnectRequest(teBinaryEncoder* encoder);
 
 	/**
 	 Start listening for connections on a port
@@ -66,6 +68,7 @@ protected:
 		CONNECTED,
 	};
 
+	Allocator      m_Allocator;
 	JellyServer*   m_Server;	//!< link back to the server
 	teDataChain    m_ReceiveChain;
 	Net::Socket_Id m_Socket;
@@ -77,8 +80,12 @@ protected:
 	bool         ReceiveInit(teDataChain* chain);
 	bool         ReceiveMsg(teDataChain* chain);
 
-	// from CRC to ChannelId
-	typedef std::map<JELLY_U32, JELLY_U32> ProtocolMap;
+	struct ProtocolInfo
+	{
+		JELLY_U32      id;
+		JellyProtocol* protocol;
+	};
+	typedef std::map<JELLY_U32, ProtocolInfo> ProtocolMap;  // CRC to Channel Id/Protocol
 
 	ProtocolMap m_KnownProtocols;
 	std::map<JELLY_U32, JELLY_U32> m_IdToCRC;

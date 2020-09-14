@@ -56,5 +56,11 @@
     <ClCompile Include="Net.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="JellyID.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="teBinaryEncoder.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>

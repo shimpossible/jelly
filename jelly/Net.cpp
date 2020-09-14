@@ -484,6 +484,10 @@ namespace Net
 		return false;
 	}
 
+	int send(Socket_Id sock, teDataChain& chain, int* bytesSent)
+	{
+
+	}
 
 	int send(Socket_Id sock, const char* data, size_t len, int* bytesSent)
 	{

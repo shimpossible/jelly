@@ -1,6 +1,8 @@
 #ifndef __NET_H__
 #define __NET_H__
 #include "JellyTypes.h"
+#include "teDataChain.h"
+
 namespace Net
 {	
 	
@@ -51,10 +53,19 @@ namespace Net
 	  @param sock  Socket to send on
 	  @param data  Data to send
 	  @param len   Length of data
-	  @param bytesSent  Number of bytes read
+	  @param bytesSent  Number of bytes sent
 	  @returns error code
 	 */
 	int send(Socket_Id sock, const char* data, size_t len, int* bytesSent);
+
+	/**
+	  Sends blocks of data to socket
+	  @param  sock   Socket to send on
+	  @param  chain  Chain of buffers to send
+	  @param  bytesSent   Number of bytes sent
+	  @returns error code
+	 */
+	int send(Socket_Id sock, teDataChain& chain, int* bytesSent);
 
 	/**
 	 Read from a socket
