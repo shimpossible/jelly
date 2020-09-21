@@ -84,16 +84,19 @@
     <ClInclude Include="JellyConnection.h" />
     <ClInclude Include="JellyMessage.h" />
     <ClInclude Include="JellyMessageQueue.h" />
+    <ClInclude Include="JellyProtocol.h" />
     <ClInclude Include="JellyRouteConfig.h" />
     <ClInclude Include="JellyServer.h" />
     <ClInclude Include="JellyTypes.h" />
     <ClInclude Include="Net.h" />
+    <ClInclude Include="teDataChain.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="JellyConnection.cpp" />
     <ClCompile Include="JellyID.cpp" />
     <ClCompile Include="JellyRouteConfig.cpp" />
     <ClCompile Include="JellyServer.cpp" />
+    <ClCompile Include="JellyTypes.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Net.cpp" />
     <ClCompile Include="teBinaryEncoder.cpp" />

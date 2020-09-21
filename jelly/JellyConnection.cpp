@@ -7,21 +7,56 @@ typedef struct MessageHeader
 	JELLY_U8  message_type;
 	JELLY_U16 message_id;
 
-	void Put(teBinaryEncoder& encoder)
+	bool Put(teBinaryEncoder& encoder)
 	{
-		encoder.Put("channel", channel_id);
-		encoder.Put("type",    message_type);
-		encoder.Put("id",      message_id);
+		bool result = true;
+		result = result && encoder.Put("channel", channel_id);
+		result = result && encoder.Put("type",    message_type);
+		result = result && encoder.Put("id",      message_id);
+		return result;
 	}
 
-	void Get(teBinaryDecoder& decoder)
+	bool Get(teBinaryDecoder& decoder)
 	{
-		decoder.Get("channel", channel_id);
-		decoder.Get("type",    message_type);
-		decoder.Get("id",      message_id);
+		bool result = true;
+		result = result && decoder.Get("channel", channel_id);
+		result = result && decoder.Get("type",    message_type);
+		result = result && decoder.Get("id",      message_id);
+		return result;
 	}
 } MessageHeader;
 
+struct ProtocolHeader
+{
+	std::string name;
+	JELLY_U32   crc;
+
+	bool Put(teBinaryEncoder& encoder)
+	{
+		bool result = true;
+		JELLY_U32 len = name.length() + 4;
+		result = result && encoder.Put("len", len);
+		result = result && encoder.Put("name", name.c_str(), name.length());
+		result = result && encoder.Put("crc", crc);
+
+		return result;
+	}
+
+	bool Get(teBinaryDecoder& decoder)
+	{
+		bool result = true;
+		JELLY_U32 len = 0;
+		result = result && decoder.Get("len", len);
+		if (!result) return result;
+		name.resize(len);
+		if (len > 0)
+		{
+			result = result && decoder.Get("name", (char*)name.c_str(), len - 4);
+			result = result && decoder.Get("crc", crc);
+		}
+		return result;
+	}
+};
 /**
   7 bit integer encoding, LSByte first
  */
@@ -57,6 +92,7 @@ JELLY_U32 Decode7Bit(JELLY_U8* val)
 
 JellyConnection::JellyConnection(Net::Socket_Id id, JellyServer* server)
 	: m_Socket(id)
+	, m_ReceiveChain(m_Buffer, sizeof(m_Buffer))
 {
 	m_Server = server;
 	m_State = INIT_ID;
@@ -91,10 +127,11 @@ JELLY_RESULT JellyConnection::GetCRC(JELLY_U32 channelId, JELLY_U32& crc)
 static void __SendProtocol(JellyProtocol* proto, void* ctx)
 {
 	teBinaryEncoder* enc = (teBinaryEncoder*)ctx;
-	JELLY_U32 len = strlen(proto->name);
-	enc->Put("length", len + 4);
-	enc->Put("name", proto->name, len);
-	enc->Put("id",   proto->id);
+
+	ProtocolHeader h;
+	h.crc = proto->id;
+	h.name = proto->name;
+	h.Put(*enc);
 }
 
 void JellyConnection::SendConnectRequest(teBinaryEncoder* encoder)
@@ -139,7 +176,10 @@ JELLY_RESULT JellyConnection::Send(JellyMessage* msg)
 		header.message_id   = msg->GetCode();
 
 		// in the list of known protocols
-		teDataChain payload;
+		char buffer[4096];
+
+		// allow 16 bytes of header
+		teDataChain payload(&buffer[16], sizeof(buffer)-16);
 		{
 			found->second.protocol->Put(msg,0, &payload);
 		}
@@ -153,16 +193,14 @@ JELLY_RESULT JellyConnection::Send(JellyMessage* msg)
 
 		// 1-3 bytes size
 		JELLY_U32 encodedSize = Encode7Bit(msgSize + 4);
-		teDataChain fullMessage;
-		fullMessage.AddTail(&encodedSize, sizeBytes);
 
-		{
-			teBinaryEncoder enc(&fullMessage);
-			header.Put(enc);
-		}
+		teDataChain fullMessage(buffer, 16);
+		teBinaryEncoder enc(&fullMessage);
+		enc.Put("size",  &encodedSize, sizeBytes); // TODO: make a special 7BitEncoded type
+		enc.Put("header", header);
 
 		// payload
-		fullMessage.AddTail(&payload);
+		fullMessage.Add(payload);
 		
 		return Send(&fullMessage);
 	}
@@ -178,15 +216,17 @@ static void __send(void* data, size_t len, void* ctx)
 }
 JELLY_RESULT JellyConnection::Send(teDataChain* chain)
 {
-	Net::send(m_Socket, chain->Buffer(), chain->Length(), 0);
+	Net::send(m_Socket, chain, 0);
 	return JELLY_OK;
 }
 
 void JellyConnection::Receive(void* data, size_t len)
 {
-	if (m_ReceiveChain.Length() == 0) m_ReceiveChain.Clear();
+	// read all the bytes, reset the pointers
+	if (m_ReceiveChain.Remaining() == 0) m_ReceiveChain.Clear();
 
-	this->m_ReceiveChain.AddTail( data, len );
+	// Append the latest data
+	this->m_ReceiveChain.Write( data, len );
 
 	bool loop=false;
 	do
@@ -194,9 +234,9 @@ void JellyConnection::Receive(void* data, size_t len)
 		loop = false;
 		switch(m_State)
 		{
-		case INIT_ID:
-		case INIT_PROTOCOL_NAME:
-		case INIT_PROTOCOL_CRC:
+		case INIT_ID:	          // ID of remote 
+		case INIT_PROTOCOL_NAME:  // name of protocol
+		case INIT_PROTOCOL_CRC:   // crc of protocol
 			loop=ReceiveInit(&m_ReceiveChain);
 			// TODO: should loop once more if there are more bytes left
 			break;
@@ -209,72 +249,73 @@ void JellyConnection::Receive(void* data, size_t len)
 
 bool JellyConnection::ReceiveMsg(teDataChain* chain)
 {
-	bool loop = false;
-
 	do
 	{
-		loop = false;
+		char* prev = chain->buffer.read_head;
+
 		// enough bytes for a size?
-		if(chain->Length() >= 3)
+		if (chain->Remaining() < 3)
 		{
-			JELLY_U8 tmp[3];
-			chain->CopyTo(&tmp, sizeof(tmp));
-			JELLY_U32 encodedBytes = 1;
-			if(tmp[0] & 0x80) encodedBytes+=1;
-			if(tmp[1] & 0x80) encodedBytes+=1;
-			// should only encode 3 bytes max..
-			//if(tmp[2] & 0x80) encodedBytes+=1;
-
-			JELLY_U32 size = Decode7Bit(tmp);
-
-			// enough for a full message?
-			if(chain->Length() >= size+encodedBytes)
-			{
-				// shift off the 'size' 1-3 bytes
-				chain->Shift(&tmp, encodedBytes);
-
-				MessageHeader header;
-				JELLY_U32 payloadSize =  size - sizeof(header);
-				
-				teBinaryDecoder decoder(chain);
-				header.Get(decoder);
-
-
-				//JELLY_U8 payload_tmp[1500];
-				//chain->Shift(&payload_tmp[ sizeof(JellyMessage)], payloadSize);
-				// need to convert from RAW bytes to a JellyMessage object (placement new)
-				// based on the CRC
-				JELLY_U32 proto_crc;
-
-				// Convert from Channel Id to Protocol
-				if(GetCRC(header.channel_id, proto_crc) == JELLY_OK)
-				{
-					ProtocolMap::iterator it = this->m_KnownProtocols.find(proto_crc);
-					// this shouldn't ever be NOT OK.. but just to be safe
-					JellyMessage* msg = CreateMessageObject(proto_crc, header.message_id);
-
-					it->second.protocol->Get(msg, 0, chain);
-					m_Server->GetRouteConfig().Route( m_Link, msg);
-
-					// Message will be releases in 'Route'
-				}
-
-
-				// TODO: drop remaining bytes...
-
-				loop = true;
-			}
-
+			// not enough, exit loop
+			return false;
 		}
-	}while(loop);
+		teBinaryDecoder dec(chain);
+		UInt7BitEncoded size = 0;
 
-	return loop;
+		if (!dec.Get("size", size)) break;
+
+		// enough for a full message?
+		if (chain->Remaining() < size)
+		{
+			// not enough, reset pointer and exit loop
+			chain->buffer.read_head = prev;
+			return false;
+		}
+		MessageHeader header;
+		JELLY_U32 payloadSize =  size - sizeof(header);
+		bool st = header.Get(dec);
+
+		printf("rcv: %d %d %08x\n",
+			st,
+			header.channel_id,
+			header.message_id
+			);
+		//JELLY_U8 payload_tmp[1500];
+		//chain->Shift(&payload_tmp[ sizeof(JellyMessage)], payloadSize);
+		// need to convert from RAW bytes to a JellyMessage object (placement new)
+		// based on the CRC
+		JELLY_U32 proto_crc;
+
+		// Convert from Channel Id to Protocol
+		if(GetCRC(header.channel_id, proto_crc) == JELLY_OK)
+		{
+			ProtocolMap::iterator it = this->m_KnownProtocols.find(proto_crc);
+			// this shouldn't ever be NOT OK.. but just to be safe
+			JellyMessage* msg = CreateMessageObject(proto_crc, header.message_id);
+
+			// TODO: improve this.  We haev the protocol here.. but
+			// RouteConfig has to look it up again during Route
+			it->second.protocol->Get(msg, 0, chain);
+
+			// Route to everyone that registered to receive the message
+			(*it->second.protocol)(m_Link, msg, 0);
+
+			msg->Release();
+		}
+
+		// TODO: drop remaining bytes...
+
+	}while(true);
+
+	return false;
 }
 
 JellyMessage* JellyConnection::CreateMessageObject(JELLY_U32 id, JELLY_U16 msgId)
 {
 	// TODO: use a pool of messages..
-	return m_Server->GetRouteConfig().FindByCRC(id)->Create(msgId, m_Allocator);
+	JellyProtocol* p = m_Server->GetRouteConfig().FindByCRC(id);
+	JellyMessage* m = p->Create(msgId, m_Allocator);	
+	return m;
 }
 
 /**
@@ -303,6 +344,7 @@ bool JellyConnection::ReceiveInit(teDataChain* chain)
 {
 	bool loop=false;
 
+	teBinaryDecoder dec(chain);
 	do
 	{
 		loop = false;
@@ -310,10 +352,11 @@ bool JellyConnection::ReceiveInit(teDataChain* chain)
 
 		if(m_State == INIT_ID)
 		{
+			// ID is 16 bytes long
 			if(chain->Length() >= 16)
 			{
 				// shift the 1st 16 bytes off into the ID
-				chain->Shift( &m_Id, sizeof(m_Id) );
+				dec.Get("id", m_Id);
 				m_State = INIT_PROTOCOL_NAME;
 				loop = true;
 			}
@@ -321,44 +364,25 @@ bool JellyConnection::ReceiveInit(teDataChain* chain)
 	
 		if (m_State == INIT_PROTOCOL_NAME)
 		{
-			JELLY_U32 numBytes=0;
-
-			if(chain->Length() >= 4)
-			{			
-				chain->CopyTo(&numBytes,4);
-				if(numBytes==0)
-				{
-					// eat the first 4 bytes
-					chain->Shift(&numBytes,4);
-
-					m_State = CONNECTED;
-					printf("Connected\r\n");
-					this->m_Server->m_Connections[ m_Id] = this;
-					return true;
-				}else
-				{
-					// enough for a Protocol?
-					if(chain->Length() >= numBytes)
-					{
-						// TODO: just DROP the bytes..
-						// eat the first 4 bytes
-						chain->Shift(&numBytes,4);
-
-						// parse the protocol
-
-						int stringLen = numBytes - 4;
-						JELLY_U32 crc;
-						char* name = new char[ stringLen+1];
-						name[stringLen] = 0;
-						chain->Shift(name, stringLen);
-						chain->Shift(&crc, 4);
-						printf("Matching protocol name:%s id:%08X\r\n", name, crc);
-
-						AddCommonProtocol(name, crc);
-						loop = true;
-					}
-				}
+			ProtocolHeader h;
+			if (!h.Get(dec))
+			{
+				break;
 			}
+
+			if (h.name.length() == 0)
+			{
+				m_State = CONNECTED;
+				printf("Connected\r\n");
+				this->m_Server->m_Connections[m_Id] = this;
+				return true;
+			}
+			// parse the protocol
+
+			printf("Matching protocol name:%s id:%08X\r\n", h.name.c_str(), h.crc);
+
+			AddCommonProtocol(h.name.c_str(), h.crc);
+			loop = true;
 		}	
 	}while(loop);
 

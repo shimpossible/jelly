@@ -5,6 +5,9 @@
 #include "JellyServer.h"
 #include "JellyProtocol.h"
 
+class JSONDecoder;
+class JSONEncoder;
+
 class CheckerHeal : public JellyMessage
 {
 public:
@@ -15,6 +18,10 @@ public:
 	CheckerHeal() 
 	{
 		value = 0;  // default value
+	}
+	~CheckerHeal()
+	{
+		value = 0;
 	}
 	// Message Decoders
 	virtual bool Get(teBinaryDecoder& decoder)
@@ -49,8 +56,8 @@ public:
 	};
 
 	// computed CRC of messages
-	static const unsigned CRC = 0xCAFEBABE;
-	static const char*    NAME;
+	const static unsigned CRC = 0xCAFEBABE;
+	const static char*    NAME;
 
 	JellyCheckerProtocol()
 		: JellyProtocol(NAME, CRC)
@@ -64,8 +71,8 @@ public:
 		switch (id)
 		{
 		case JELLY_MSG_CheckerHeal:			
-			buffer = alloc.Allocate(sizeof(CheckerHeal));
-			result = new (buffer) CheckerHeal();
+			buffer = alloc.Allocate(sizeof(RefCounted<CheckerHeal>));
+			result = new (buffer) RefCounted<CheckerHeal>(alloc);
 			break;
 		default:
 			// no match
@@ -245,11 +252,11 @@ class MatchmakerLockPolicy
 public:
     void Lock(JellyMessage *msg, JellyMessageQueue **ppQueue)
     {
-		printf("aquire lock\r\n");
+		printf("aquire lock\n");
     }
     void Unlock(JellyMessage *msg)
 	{
-		printf("release lock");
+		printf("release lock\n");
 	}
 };
 
@@ -276,8 +283,12 @@ public:
 	void Configure()
 	{
 		JellyRouteConfig& routeConfig = m_pJellyServer->GetRouteConfig();
+
+		// Want to receive Message for JellyCheckerProtocol
+		// Send to 'CheckerDispatch'
+		// using LockPolicy
 		routeConfig.ConfigureInbound<JellyCheckerProtocol>(this, &BoardServer::CheckerDispatch, m_LockPolicy);
-		routeConfig.ConfigureInbound<JellyCheckerProtocol>(this, &m_messageQueue);
+		//routeConfig.ConfigureInbound<JellyCheckerProtocol>(this, &m_messageQueue);
 	}
 
 	void Idle()

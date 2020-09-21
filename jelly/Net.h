@@ -65,7 +65,7 @@ namespace Net
 	  @param  bytesSent   Number of bytes sent
 	  @returns error code
 	 */
-	int send(Socket_Id sock, teDataChain& chain, int* bytesSent);
+	int send(Socket_Id sock, teDataChain* chain, int* bytesSent);
 
 	/**
 	 Read from a socket

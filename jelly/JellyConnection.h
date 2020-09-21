@@ -4,6 +4,7 @@
 #include <map>
 #include "JellyTypes.h"
 #include "JellyMessage.h"
+#include "JellyProtocol.h"
 #include "Net.h"
 #include "teBinaryEncoder.h"
 #include "Allocator.h"
@@ -70,6 +71,8 @@ protected:
 
 	Allocator      m_Allocator;
 	JellyServer*   m_Server;	//!< link back to the server
+
+	char           m_Buffer[4096];
 	teDataChain    m_ReceiveChain;
 	Net::Socket_Id m_Socket;
 	State          m_State;

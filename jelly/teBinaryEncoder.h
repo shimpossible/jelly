@@ -35,8 +35,7 @@ public:
 		template<typename T, typename = typename std::enable_if< std::is_trivial<T>::value>::type >
 		static bool Decode(teBinaryDecoder& dec, T& t)
 		{
-			dec.m_Chain->Shift(&t, sizeof(t));
-			return true;
+			return dec.m_Chain->Read(&t, sizeof(t));
 		}
 	};
 
@@ -63,7 +62,13 @@ public:
 		
 		return func::Decode(*this, val);
 	}
+	bool Get(const char* name, void* data, size_t len)
+	{
+		m_Chain->Read(data, len);
+		return true;
+	}
 
+	teDataChain* GetChain() { return m_Chain; }
 protected:
 	teDataChain* m_Chain;
 };
@@ -142,9 +147,10 @@ public:
 
 	bool Put(const char* name, const void* data, size_t len)
 	{
-		m_Chain->AddTail(data, len);
+		m_Chain->Write(data, len);
 		return true;
 	}
+
 	teDataChain* GetChain() { return m_Chain; }
 protected:
 	teDataChain* m_Chain;
@@ -154,4 +160,5 @@ protected:
 namespace std 
 {
 	bool BinaryPut(teBinaryEncoder& enc, std::string& str);
+	bool BinaryGet(teBinaryDecoder& enc, std::string& str);
 }

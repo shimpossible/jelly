@@ -484,9 +484,30 @@ namespace Net
 		return false;
 	}
 
-	int send(Socket_Id sock, teDataChain& chain, int* bytesSent)
+	int send(Socket_Id sock, teDataChain* chain, int* bytesSent)
+	
 	{
+		WSABUF buff[32];
+		DWORD count = 0;
+		DWORD sent;
 
+		teDataChain* next = chain;
+		while (next)
+		{
+			buff[count].buf = next->buffer.read_head;
+			buff[count].len = next->buffer.write_head - next->buffer.read_head;
+			count++;
+			assert(count < 32);
+			next = next->Next();
+		}
+		int r = ::WSASend(sock, buff, count, &sent, 0,0,0);
+
+		if (r == SOCKET_ERROR)
+		{
+			if (bytesSent != 0) *bytesSent = 0;
+			return WSAGetLastError();
+		}
+		return 0;
 	}
 
 	int send(Socket_Id sock, const char* data, size_t len, int* bytesSent)

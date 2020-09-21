@@ -4,86 +4,107 @@
 #include "JellyTypes.h"
 #include <assert.h>
 
+struct teDataBuffer
+{
+	char*  start;    //!< start of buffer
+	char*  end;      //!< End of buffer
+
+	char* read_head;  //!< Where to read from
+	char* write_head; //!< Where to write to
+};
+
 /**
   Chains blocks of memory together
  */
 class teDataChain
 {
 public:
-
-	const char* Buffer() {
-		return m_Buffer;
-	}
-
-	size_t Length()
+	teDataChain* Next() { return next; }
+	teDataChain(void* data, size_t len)	
 	{
-		assert(m_Index >= m_Read);
-		return m_Index - m_Read;
-	}
-
-	teDataChain()
-	{
-		m_Read = 0;
-		m_Capacity = 1024;
-		m_Index = 0;
+		buffer.start      = (char*)data;
+		buffer.read_head  = (char*)data;
+		buffer.write_head = (char*)data;
+		buffer.end = buffer.start + len;
+		next = nullptr;
 	}
 	~teDataChain()
 	{
 	}
 
+	size_t Remaining()
+	{
+		size_t result = (buffer.write_head - buffer.read_head);
+		if (next) result += next->Remaining();
+		return result;
+	}
+	size_t Length()
+	{
+		size_t result = (buffer.write_head - buffer.start);
+		if (next) result += next->Length();
+		return result;
+	}
 	void Clear()
 	{
-		m_Index = 0;
-		m_Read = 0;
+		buffer.write_head = buffer.start;
+		buffer.read_head  = buffer.start;
+
+		if (next) next->Clear();
 	}
 
-	bool AddTail(teDataChain* other)
+	void Add(teDataChain& other)
 	{
-		return AddTail(&other->m_Buffer, other->m_Index);
+		next = &other;
 	}
-
-	/**
-	 Add node to the END of the chain
-	*/
-	bool AddTail(const void* data, size_t len)
+	bool Write(const void* data, size_t len)
 	{
-		memcpy(&m_Buffer[m_Index], data, len);
-		m_Index += len;
-		return true;
+		// bytes left in buffer?
+		size_t bytes = buffer.end - buffer.write_head;
+		// clip to length
+		if (bytes > len) bytes = len;
+
+		// room in buffer?
+		if (bytes>0)
+		{
+			memcpy(buffer.write_head, data, bytes);
+			buffer.write_head += bytes;
+		}
+
+		len -= bytes;
+
+		// any remaining data goes to next in chain
+		if (len && next) return next->Write((const char*)data + bytes, len);
+
+		// otherwise, return TRUE if all data was pushed
+		return len == 0;
 	}
 
-	bool AddHead(void* data, size_t len)
+	bool Read(void* dst, size_t len)
 	{
-		memmove(&m_Buffer[len], m_Buffer, len);
-		memcpy(m_Buffer, data, len);
+		// bytes left in buffer?
+		size_t bytes = buffer.write_head - buffer.read_head;
+		// clip to length
+		if (bytes > len) bytes = len;
 
-		return true;
+		// room in buffer?
+		if (bytes > 0)
+		{
+			memcpy(dst, buffer.read_head, bytes);
+			buffer.read_head += bytes;
+		}
+
+		len -= bytes;
+
+		// any remaining data goes to next in chain
+		if (len && next) return next->Write((const char*)dst + bytes, len);
+
+		// otherwise, return TRUE if all data was pushed
+		return len == 0;
 	}
 
-	 /**
-	  Shift bytes off the front of the buffer
-	  */
-	bool Shift(void* dst, size_t len)
-	{
-		memcpy(dst, &m_Buffer[m_Read], len);
-		m_Read += len;
-
-		memmove(m_Buffer, &m_Buffer[m_Read], Length());
-		m_Read -= len;
-		m_Index -= len;
-		return true;
-	}
-
-	void CopyTo(void* dst, size_t len)
-	{
-		memcpy(dst, &m_Buffer[m_Read], len);
-	}
-
+	teDataBuffer buffer;
 protected:
 
-	char            m_Buffer[1024];
-	size_t          m_Read;
-	size_t          m_Index;
-	size_t          m_Capacity;
+	teDataChain* next;
 };
 

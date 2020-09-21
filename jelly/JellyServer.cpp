@@ -52,12 +52,13 @@ bool JellyServer::Start(JELLY_U16 port)
 	*/
 JELLY_RESULT JellyServer::Send(JellyID server, ObjectID objectId, JellyMessage* msg)
 {
-	if(this->m_ID == server)
+	if(this->m_ID == server) // send to self?
 	{
 		m_RouteConfig.Route(m_Link, msg);
 	}
 	else
 	{
+		// send to call connections
 		ConnectionMap::iterator found = m_Connections.find(server);
 		if(found != m_Connections.end())
 		{
@@ -72,7 +73,7 @@ JELLY_RESULT JellyServer::Send(JellyID server, ObjectID objectId, JellyMessage* 
 
 JELLY_RESULT JellyServer::Send(ObjectID obj, JellyMessage* msg)
 {
-	msg->destination = obj;
+	msg->m_Destination = obj;
 
 	//NOTE: this seems rather less than optimal..
 	// would be more efficient to serialize the message first and pass
@@ -106,7 +107,7 @@ void JellyServer::ProcessQueue(JellyMessageQueue* queue, void* handler)
 		m_RouteConfig.Route(link, msg, handler);
 
 		// Release message
-		delete msg;
+		msg->Release();
 	}
 }
 
@@ -145,7 +146,7 @@ void JellyServer::net_received(Net::Socket_Id id, void* data, size_t len)
 		printf("Unknown socket %d\r\n", id);
 		return ;
 	}
-	printf("socket %d received data\r\n", id);
+	printf("socket %d received data %d\r\n", id, len);
 	client->Receive(data,len);
 
 }
@@ -181,10 +182,11 @@ void JellyServer::AddPending(Net::Socket_Id id, JellyConnection* client)
 	JellyServer::s_Clients[id] = client;
 	// start negotiation with other box
 
-	teDataChain chain;
+	char buffer[4096];
+	teDataChain chain(buffer, sizeof(buffer));
 	teBinaryEncoder encoder ( &chain );
 	client->SendConnectRequest(&encoder);
 
 	// flush out the chain
-	Net::send(client->m_Socket, chain.Buffer(), chain.Length(), 0);
+	Net::send(client->m_Socket, &chain, 0);
 }

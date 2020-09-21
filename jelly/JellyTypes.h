@@ -1,5 +1,6 @@
 #ifndef __JELLYTYPES_H__
 #define __JELLYTYPES_H__
+#include <stdint.h>
 
 typedef unsigned long long   JELLY_U64;
 typedef unsigned long        JELLY_U32;
@@ -28,6 +29,23 @@ typedef enum JELLY_MESSAGE_TYPE
 
 class teBinaryEncoder;
 class teBinaryDecoder;
+
+
+struct UInt7BitEncoded
+{
+	uint32_t value;
+
+	UInt7BitEncoded() { value = 0; }
+	UInt7BitEncoded(int val) { value = val; }
+
+	operator uint32_t() const
+	{
+		return value;
+	}
+
+	bool Put(teBinaryEncoder& enc);
+	bool Get(teBinaryDecoder& dec);
+};
 
 /** 128 bit UUID */
 template<unsigned int>

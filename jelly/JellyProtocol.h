@@ -5,32 +5,49 @@
 #include "Allocator.h"
 #include "teDataChain.h"
 
+/**
+ Defines a group of messages
+ */
 class JellyProtocol
 {
 	struct Tuple
 	{
 		JellyDispatchCommand* command;  // handler to dispatch the message
-		JellyMessageQueue* queue;    // queue messages here if we can't dispatch
+		JellyMessageQueue*    queue;    // queue messages here if we can't dispatch
 	};
 	std::list<Tuple>          m_Handlers;
 public:
 	const char* name;           // text name of protocol
-	JELLY_U32                 id;	          // id of protocol
-
-	bool virtual Put(JellyMessage* msg, int p, teDataChain* chain) = 0;
-	bool virtual Get(JellyMessage* msg, int p, teDataChain* chain) = 0;
-	virtual JellyMessage* Create(JELLY_U32 id, Allocator& alloc) = 0;
+	const JELLY_U32   id;	    // id of protocol
 
 	/**
-	  Create new protocol metadata
-	  @param name     text name of protocol
-	  @param id       32bit ID of protocol
+	  Serialize a message 
+	  @param  msg     Message to serialize
+	  @param  p       type of encoding to use
+	  @param  chain   Data Buffer to fill
+
+	  @returns TRUE on success
 	 */
-	JellyProtocol(const char* name, JELLY_U32 id)
-	{
-		this->name = name;
-		this->id = id;
-	}
+	bool virtual Put(JellyMessage* msg, int p, teDataChain* chain) = 0;
+
+	/**
+	 Deserialize a message
+	 @param  msg    Message to deserialize.  Must be a message in this protocol
+	 @param  p      type of encoding to use
+	 @param  chain  Data buffer to read
+
+	 @returns TRUE on success
+	 */
+	bool virtual Get(JellyMessage* msg, int p, teDataChain* chain) = 0;
+
+	/**
+	  Create a message of given ID
+	  @param id     ID of message to create
+	  @param alloc  Allocates memory for message
+
+	  @return ref counted object
+	 */
+	virtual JellyMessage* Create(JELLY_U32 id, Allocator& alloc) = 0;
 
 	void AddHandler(JellyDispatchCommand* command)
 	{
@@ -66,21 +83,36 @@ public:
 			it != m_Handlers.end();
 			it++)
 		{
-			if (handler && it->command->TargetObject() == handler)
+			// has a specific target, and this is not it...
+			if (handler && it->command->TargetObject() != handler)
 			{
-				it->command->Dispatch(link, msg);
+				// go to next..
+				continue;
+			}
+
+			// queue defined, place in queue to be dispatched later
+			if (it->queue != 0)
+			{
+				msg->AddRef(); // increment so it doesn't get removed
+				it->queue->Add(link, msg);
 			}
 			else
 			{
-				if (it->queue != 0)
-				{
-					it->queue->Add(link, msg);
-				}
-				else
-				{
-					it->command->Dispatch(link, msg);
-				}
+				// Dispatch right now
+				it->command->Dispatch(link, msg);
 			}
 		}
+	}
+protected:
+
+	/**
+    Create new protocol metadata
+    @param name     text name of protocol
+    @param id       32bit ID of protocol
+    */
+	JellyProtocol(const char* name, JELLY_U32 _id)
+		: id(_id)
+	{
+		this->name = name;
 	}
 };

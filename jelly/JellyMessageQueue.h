@@ -13,6 +13,7 @@ public:
 		Tuple* t = new Tuple();
 		t->link = link;
 		t->msg = msg;
+
 		m_Queue.push(t);
 	}
 
